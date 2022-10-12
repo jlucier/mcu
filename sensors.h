@@ -5,14 +5,19 @@
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
 #include <DHT_U.h>
+#include <DallasTemperature.h>
+#include <OneWire.h>
 
 #define DHT1_PIN 13
 #define DHT2_PIN 12
+#define ONE_WIRE_BUS 2
 #define PH_PIN A0
 #define SENSOR_SLOPE -0.00563
 
 DHT_Unified dht1(DHT1_PIN, DHT22);
 DHT_Unified dht2(DHT2_PIN, DHT22);
+OneWire one_wire(ONE_WIRE_BUS);
+DallasTemperature temp_sensors(&one_wire);
 
 struct dht_reading_t {
   float temp; // c
@@ -83,11 +88,25 @@ void print_reading(dht_reading_t* reading) {
   Serial.println("%");
 }
 
+
+// temp
+
+void setup_temp() {
+  temp_sensors.begin();
+}
+
+float read_liquid_temp() {
+  temp_sensors.requestTemperatures();
+  return temp_sensors.getTempCByIndex(0);
+}
+
+
 // setup
 
 void setup_sensors() {
   setup_ph();
   setup_dht();
+  setup_temp();
 }
 
 sensor_reading_t read_sensors() {
@@ -95,7 +114,7 @@ sensor_reading_t read_sensors() {
     read_dht(&dht1),
     read_dht(&dht2),
     read_ph(false),
-    20,
+    read_liquid_temp(),
     millis(),
   };
 }
