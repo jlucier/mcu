@@ -23,7 +23,17 @@ void setup() {
 }
 
 void loop() {
-   http_server.handleClient();
+  http_server.handleClient();
+}
+
+void calibrate_ph() {
+  delay(1000);
+  sensor_reading_t reading = read_sensors();
+  Serial.print("temp 1: ");
+  Serial.print(reading.dht1.temp);
+  Serial.print("   temp 2: ");
+  Serial.println(reading.dht2.temp);
+  Serial.println();
 }
 
 // endpoints
@@ -75,7 +85,7 @@ void handle_http_metrics() {
       "# UNIT " PROM_NAMESPACE "_solution_temperature_celsius \u00B0C\n"
       PROM_NAMESPACE "_solution_temperature_celsius %f\n";
 
-  if (!has_sensed || millis() - reading.millis > 10000) {
+  if (!has_sensed || millis() - reading.millis > 5000) {
     reading = read_sensors();
     if (!reading.dht1.success || !reading.dht2.success) {
         http_server.send(500, "text/plain; charset=utf-8", "Sensor error.");
@@ -98,6 +108,7 @@ void handle_http_metrics() {
     reading.liquid_temp
   );
   http_server.send(200, "text/plain; charset=utf-8", response);
+  Serial.println("Sent metrics");
 }
 
 // Setup / run

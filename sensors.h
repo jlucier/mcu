@@ -8,8 +8,8 @@
 #include <DallasTemperature.h>
 #include <OneWire.h>
 
-#define DHT1_PIN 13
-#define DHT2_PIN 12
+#define DHT1_PIN 12
+#define DHT2_PIN 13
 #define ONE_WIRE_BUS 2
 #define PH_PIN A0
 #define SENSOR_SLOPE -0.00563
@@ -35,16 +35,14 @@ struct sensor_reading_t {
 
 // PH
 
-void setup_ph() {
-}
-
 float read_ph(bool print) {
-
-  delay(2000);
-  float mv = analogRead(PH_PIN) / 1024.0 * 3300;  // read milivolts
-  float ph = SENSOR_SLOPE * (mv - 1500) + 7;
+  int raw = analogRead(PH_PIN);
+  float mv = raw / 1024.0 * 3300;  // read milivolts
+  float ph = raw * -0.01802851203 + 15.94402376;
 
   if (print) {
+    Serial.print("Raw read: ");
+    Serial.println(raw);
     Serial.print("Analog V: ");
     Serial.println(mv);
     Serial.print("PH: ");
@@ -104,7 +102,6 @@ float read_liquid_temp() {
 // setup
 
 void setup_sensors() {
-  setup_ph();
   setup_dht();
   setup_temp();
 }
