@@ -106,12 +106,24 @@ void setup_sensors() {
   setup_temp();
 }
 
-sensor_reading_t read_sensors() {
+sensor_reading_t read_sensors(bool print=false) {
   return sensor_reading_t {
     read_dht(&dht1),
     read_dht(&dht2),
-    read_ph(false),
+    read_ph(print),
     read_liquid_temp(),
     millis(),
   };
+}
+
+// tools
+
+void calibrate_ph() {
+  delay(1000);
+  sensor_reading_t reading = read_sensors();
+  Serial.print("temp 1: ");
+  Serial.print(reading.dht1.temp);
+  Serial.print("   temp 2: ");
+  Serial.println(reading.dht2.temp);
+  Serial.println();
 }
