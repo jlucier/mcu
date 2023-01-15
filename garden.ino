@@ -8,7 +8,7 @@
 
 void setup() {
     Serial.begin(115200);
-    while (!Serial) delay(10);
+    // while (!Serial) delay(10);
     pinMode(LED_BUILTIN, OUTPUT);
     setup_sensors();
     setup_server();
