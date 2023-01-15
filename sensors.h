@@ -11,9 +11,9 @@
 #include "pico-onewire/source/one_wire.cpp"
 
 
-#define DHT1_PIN 13
-#define DHT2_PIN 14
-#define ONE_WIRE_BUS 15
+#define DHT1_PIN 22
+#define DHT2_PIN 21
+#define ONE_WIRE_BUS 20
 #define PH_PIN A2
 #define SENSOR_SLOPE -0.00563
 

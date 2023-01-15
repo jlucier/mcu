@@ -10,10 +10,10 @@
 #define MAX_ROUTES 32
 #define MAX_ROUTE_TARGET 64
 
-#define PIN_RX 16
-#define PIN_TX 18
-#define PIN_CS 17
-#define PIN_SCK 18
+#define PIN_RX 4
+#define PIN_TX 3
+#define PIN_CS 5
+#define PIN_SCK 2
 
 
 namespace EthHTTPServer {
