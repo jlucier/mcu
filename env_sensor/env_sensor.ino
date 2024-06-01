@@ -8,6 +8,7 @@
 #define PROM_NAMESPACE "home"
 #define SENSE_EVERY 10000
 #define HTTP_METRICS_ENDPOINT "/metrics"
+#define HTTP_BLINK_ENDPOINT "/blink"
 #define HTTP_SERVER_PORT 80
 
 #define DHT1_PIN 5
@@ -49,6 +50,7 @@ void setup_http_server() {
     Serial.println("Setting up HTTP server");
     http_server.on("/", HTTPMethod::HTTP_GET, handle_http_root);
     http_server.on(HTTP_METRICS_ENDPOINT, HTTPMethod::HTTP_GET, handle_http_metrics);
+    http_server.on(HTTP_BLINK_ENDPOINT, HTTPMethod::HTTP_GET, http_blink);
     http_server.onNotFound(handle_http_not_found);
     http_server.begin();
     Serial.println("HTTP server started");
@@ -108,6 +110,13 @@ void handle_http_not_found() {
     http_server.send(404, "text/plain; charset=utf-8", "Not found.");
 }
 
+void http_blink() {
+  http_server.send(200, "text/plain; charset=utf-8", "Blinking!");
+  esp8266_set_led(true);
+  delay(200);
+  esp8266_set_led(false);
+}
+
 void handle_http_metrics() {
   static bool has_sensed = false;
   static dht_reading_t reading;
@@ -125,8 +134,6 @@ void handle_http_metrics() {
       "# TYPE " PROM_NAMESPACE "_air_heat_index_celsius gauge\n"
       "# UNIT " PROM_NAMESPACE "_air_heat_index_celsius \u00B0C\n"
       PROM_NAMESPACE "_air_heat_index_celsius %f\n";
-
-  esp8266_set_led(true);
 
   if (!has_sensed || millis() - reading.millis > SENSE_EVERY) {
     reading = sense(&dht1);
@@ -147,7 +154,7 @@ void handle_http_metrics() {
     reading.temp,
     reading.heat_index
   );
-  esp8266_set_led(false);
+
   http_server.send(200, "text/plain; charset=utf-8", response);
   Serial.println("Sent metrics");
 }
