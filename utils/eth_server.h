@@ -1,25 +1,25 @@
 #include <SPI.h>
 #include <Ethernet.h>
 
-#include "private.h"
-
-#define HTTP_SERVER_PORT 80
 #define MAX_RESPONSE_LEN 2048
 #define MAX_REQUEST_BODY 2048
 #define MAX_HEADERS 10
 #define MAX_ROUTES 32
 #define MAX_ROUTE_TARGET 64
 
-#define PIN_RX 4
-#define PIN_TX 3
-#define PIN_CS 5
-#define PIN_SCK 2
-
-
 namespace EthHTTPServer {
     char buffer[4096];
 
-    static EthernetServer server(80);
+    struct EthServerConfig {
+        byte mac[12] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
+        long unsigned int ip = 0;
+        unsigned int pin_rx = 4;
+        unsigned int pin_tx = 3;
+        unsigned int pin_cs = 5;
+        unsigned int pin_sck = 2;
+    };
+
+    static EthernetServer server(SERVER_PORT);
 
     struct http_header {
         char name[64];
@@ -234,13 +234,13 @@ namespace EthHTTPServer {
 
     // user api
 
-    void setup() {
+    void setup(EthServerConfig config) {
         Serial.println("Server init");
         // SPI
-        bool ok = SPI.setRX(PIN_RX);
-        ok &= SPI.setTX(PIN_TX);
-        ok &= SPI.setCS(PIN_CS);
-        ok &= SPI.setSCK(PIN_SCK);
+        bool ok = SPI.setRX(config.pin_rx);
+        ok &= SPI.setTX(config.pin_tx);
+        ok &= SPI.setCS(config.pin_cs);
+        ok &= SPI.setSCK(config.pin_sck);
 
         if (ok) {
             // true for hardware cs
@@ -250,12 +250,18 @@ namespace EthHTTPServer {
         }
 
         // Ethernet interface
-        Ethernet.init(PIN_CS);
-        Ethernet.begin(mac, ip);
+        Ethernet.init(config.pin_cs);
+        if (config.ip) {
+            Ethernet.begin(config.mac, config.ip);
+        } else {
+            Ethernet.begin(config.mac);
+        }
+
         if (Ethernet.hardwareStatus() == EthernetNoHardware) {
             Serial.println("Ethernet not found.");
         } else {
             Serial.println("Ethernet found.");
+            Serial.println(Ethernet.localIP());
         }
     }
 
