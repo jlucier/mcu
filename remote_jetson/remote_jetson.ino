@@ -22,9 +22,6 @@ void setup() {
     pinMode(REC_PIN, OUTPUT);
     pinMode(POWER_BTN, OUTPUT);
 
-    digitalWrite(REC_PIN, HIGH);
-    digitalWrite(POWER_BTN, HIGH);
-
     // server
     setup_server();
 }
