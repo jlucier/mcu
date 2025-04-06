@@ -11,6 +11,7 @@
 #define HTTP_BLINK_ENDPOINT "/blink"
 #define HTTP_SERVER_PORT 80
 
+#define LED_RELAY_PIN 6
 #define DHT1_PIN 5
 DHT dht1(DHT1_PIN, DHT22);
 ESP8266WebServer http_server(HTTP_SERVER_PORT);
@@ -40,9 +41,9 @@ void setup_wifi() {
   Serial.println();
   Serial.print("Connected! IP address: ");
   Serial.println(WiFi.localIP());
-  esp8266_set_led(true);
+  esp8266_main_led(true);
   delay(500);
-  esp8266_set_led(false);
+  esp8266_main_led(false);
 }
 
 
@@ -60,6 +61,10 @@ void setup_dht() {
   dht1.begin();
 }
 
+void setup_leds() {
+  pinMode(LED_RELAY_PIN, OUTPUT);
+}
+
 dht_reading_t sense(DHT* dht) {
   float h = dht->readHumidity();
   float t = dht->readTemperature();
@@ -75,20 +80,31 @@ dht_reading_t sense(DHT* dht) {
 void setup() {
     Serial.begin(115200);
     pinMode(LED_BUILTIN, OUTPUT);
-    esp8266_set_led(false);
+    esp8266_main_led(false);
     // while (!Serial) delay(10);
-    setup_dht();
-    setup_wifi();
-    setup_http_server();
+    // setup_dht();
+    setup_leds();
+    // setup_wifi();
+    // setup_http_server();
 }
 
-void esp8266_set_led(bool val) {
+void esp8266_main_led(bool val) {
   // high and low are backwards?
   digitalWrite(LED_BUILTIN, val ? LOW : HIGH);
 }
 
+void water_led(bool val) {
+  digitalWrite(LED_RELAY_PIN, val ? LOW : HIGH);
+}
+
 void loop() {
-  http_server.handleClient();
+  // http_server.handleClient();
+  while (true) {
+    water_led(true);
+    delay(1000);
+    water_led(false);
+    delay(1000);
+  }
 }
 
 // endpoints
@@ -112,9 +128,9 @@ void handle_http_not_found() {
 
 void http_blink() {
   http_server.send(200, "text/plain; charset=utf-8", "Blinking!");
-  esp8266_set_led(true);
+  esp8266_main_led(true);
   delay(200);
-  esp8266_set_led(false);
+  esp8266_main_led(false);
 }
 
 void handle_http_metrics() {
