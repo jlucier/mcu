@@ -9,7 +9,7 @@ import subprocess
 import requests
 
 
-MCU_URL = "http://192.168.4.83"
+MCU_URL = "http://10.253.0.132"
 
 
 JETSON_VENDOR = "0955"
