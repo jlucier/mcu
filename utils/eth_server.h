@@ -1,23 +1,38 @@
 #include <SPI.h>
 #include <Ethernet.h>
 
+#ifndef SERVER_PORT
+#define SERVER_PORT 80
+#endif
+
+#ifndef MAX_RESPONSE_LEN
 #define MAX_RESPONSE_LEN 2048
+#endif
+
+#ifndef MAX_REQUEST_BODY
 #define MAX_REQUEST_BODY 2048
-#define MAX_HEADERS 10
-#define MAX_ROUTES 32
+#endif
+
+#ifndef MAX_ROUTE_TARGET
 #define MAX_ROUTE_TARGET 64
+#endif
+
+#ifndef DISABLE_HEADERS
+#ifndef MAX_HEADERS 
+#define MAX_HEADERS 10
+#endif
+#endif
+
+#ifndef MAX_ROUTES
+#define MAX_ROUTES 32
+#endif
+
+#ifndef ETH_HTTP_BUFFER_SIZE
+#define ETH_HTTP_BUFFER_SIZE 4096
+#endif
 
 namespace EthHTTPServer {
-    char buffer[4096];
-
-    struct EthServerConfig {
-        byte mac[12] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
-        long unsigned int ip = 0;
-        unsigned int pin_rx = 4;
-        unsigned int pin_tx = 3;
-        unsigned int pin_cs = 5;
-        unsigned int pin_sck = 2;
-    };
+    char buffer[ETH_HTTP_BUFFER_SIZE];
 
     static EthernetServer server(SERVER_PORT);
 
@@ -29,21 +44,25 @@ namespace EthHTTPServer {
     struct http_request {
         bool valid = true;
         int content_length = 0;
+        char method[8];
+        char protocol[8];
+        char target[MAX_ROUTE_TARGET];
+    #ifndef DISABLE_HEADERS
         int num_headers = 0;
-        char method[16];
-        char protocol[16];
-        char target[128];
         http_header headers[MAX_HEADERS];
+    #endif
         char body[MAX_REQUEST_BODY];
     };
 
     struct http_response {
         int code = 200;
-        char code_msg[32] = "Success";
+        char code_msg[16] = "Success";
         char content_type[32] = "text/plain; charset=utf-8";
-        http_header headers[MAX_HEADERS];
         char body[MAX_RESPONSE_LEN];
+        #ifndef DISABLE_HEADERS
+        http_header headers[MAX_HEADERS];
         int num_headers = 0;
+        #endif
     };
 
     using route_func_t = http_response (*)(const http_request&);
@@ -68,6 +87,14 @@ namespace EthHTTPServer {
         headers,
         body
     };
+
+    // response helper
+    http_response empty_response(int code, const char* code_message) {
+        http_response resp;
+        resp.code = code;
+        strcpy(resp.code_msg, code_message);
+        return resp;
+    }
 
     // helpers
 
@@ -109,20 +136,21 @@ namespace EthHTTPServer {
     }
 
     http_request parse_request(EthernetClient& client) {
-        int len = read_all(client, buffer, 4096);
+        int len = read_all(client, buffer, ETH_HTTP_BUFFER_SIZE);
 
         http_request req;
         parse_stage stage = parse_stage::method;
 
         int cursor = 0;
         int header_i = 0;
+        Serial.println("Parsing request...");
+        Serial.println(buffer);
         while (cursor < len) {
             char* data = buffer + cursor;
             int remaining = len - cursor;
 
             if (stage < parse_stage::headers) {
                 int space_i = find_whitespace(data, remaining);
-
                 char* holster;
                 parse_stage next;
                 switch (stage) {
@@ -144,13 +172,23 @@ namespace EthHTTPServer {
                 cursor += space_i + 1;
                 stage = next;
             }
-            else if (stage == parse_stage::headers && header_i < MAX_HEADERS) {
+            else if (stage == parse_stage::headers
+            #ifndef DISABLE_HEADERS
+                && header_i < MAX_HEADERS) {
+            #else
+                ) {
+            #endif
                 // skip headers lol (read until we can an empty line)
                 int ll = find_endline(data, remaining);
                 int name_end = find_char(data, remaining, ':');
 
                 if (name_end + 2 < ll) {
+            #ifndef DISABLE_HEADERS
                     http_header* header = &req.headers[header_i];
+            #else
+                    static http_header _header;
+                    http_header* header = &_header;
+            #endif
                     cpy(header->name, data, name_end);
                     cpy(header->data, data + name_end + 2, ll - (name_end + 2));
 
@@ -159,8 +197,10 @@ namespace EthHTTPServer {
                         req.content_length = strtol(header->data, &end, 10);
                     }
 
+            #ifndef DISABLE_HEADERS
                     req.num_headers++;
                     header_i++;
+            #endif
                 }
 
                 cursor += ll + 1;
@@ -175,10 +215,14 @@ namespace EthHTTPServer {
                 break;
             }
         }
+        Serial.print("Finished. Target: ");
+        Serial.println(req.target);
         return req;
     }
 
     const route_t* match_route(const http_request& req) {
+        Serial.print("Matching route for target: ");
+        
         for (int i = 0; i < route_table.num_routes; i++) {
             const route_t* r = &route_table.routes[i];
 
@@ -197,6 +241,9 @@ namespace EthHTTPServer {
             "%s"
             "\n"
             "%s";
+        #ifdef DISABLE_HEADERS
+        static char header_buffer[1] = {0}; // empty string if headers are disabled
+        #else
         static char const* header_format = "%s: %s\n";
         static char header_buffer[2048];
         static char scratch[512];
@@ -207,6 +254,7 @@ namespace EthHTTPServer {
             strcpy(header_buffer + offset, scratch);
             offset += strlen(scratch);
         }
+        #endif
 
         sprintf(
             buffer,
@@ -226,15 +274,22 @@ namespace EthHTTPServer {
     }
 
     http_response default_not_found(const http_request& req) {
-        return http_response{
-            404,
-            "Not found",
-        };
+        return empty_response(404, "Not found");
     }
 
     // user api
 
-    void setup(EthServerConfig config) {
+    #ifdef BOARD_IS_PICO
+    struct EthServerConfig {
+        byte mac[12] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
+        long unsigned int ip = 0;
+        unsigned int pin_rx = 4;
+        unsigned int pin_tx = 3;
+        unsigned int pin_cs = 5;
+        unsigned int pin_sck = 2;
+    };
+
+    void setup(const EthServerConfig& config) {
         Serial.println("Server init");
         // SPI
         bool ok = SPI.setRX(config.pin_rx);
@@ -246,11 +301,11 @@ namespace EthHTTPServer {
             // true for hardware cs
             SPI.begin(true);
         } else {
-            Serial.println("FUCKKKKK");
+            Serial.println("SPI Failed");
         }
+        Ethernet.init(config.pin_cs);
 
         // Ethernet interface
-        Ethernet.init(config.pin_cs);
         if (config.ip) {
             Ethernet.begin(config.mac, config.ip);
         } else {
@@ -264,10 +319,26 @@ namespace EthHTTPServer {
             Serial.println(Ethernet.localIP());
         }
     }
+    #else
+    void setup(const byte* mac, unsigned long ip = 0) {
+        SPI.begin();
+        if (ip) {
+            Ethernet.begin(mac, ip);
+        } else {
+            Ethernet.begin(mac);
+        }
+
+        if (Ethernet.hardwareStatus() == EthernetNoHardware) {
+            Serial.println("Ethernet not found.");
+        } else {
+            Serial.println("Ethernet found.");
+            Serial.println(Ethernet.localIP());
+        }
+    }
+
+    #endif
 
     void add_endpoint(const char* target, route_func_t func) {
-        assert(route_table.num_routes < MAX_ROUTES);
-
         route_t& new_route = route_table.routes[route_table.num_routes];
         strcpy(new_route.target, target);
         new_route.func = func;
@@ -295,6 +366,7 @@ namespace EthHTTPServer {
                 send_response(client, default_not_found(req));
             }
 
+            Serial.println("Request handled.");
             digitalWrite(LED_BUILTIN, LOW);
         }
     }
