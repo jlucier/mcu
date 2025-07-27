@@ -1,62 +1,97 @@
 #include <SPI.h>
 #include <Ethernet.h>
 
-#define MAX_RESPONSE_LEN 2048
-#define MAX_REQUEST_BODY 2048
-#define MAX_HEADERS 10
-#define MAX_ROUTES 32
-#define MAX_ROUTE_TARGET 64
+#ifndef ETH_SERVER_PORT
+#define ETH_SERVER_PORT 80
+#endif
+
+#ifndef ETH_DISABLE_BODY
+#ifndef ETH_MAX_RESPONSE_LEN
+#define ETH_MAX_RESPONSE_LEN 2048
+#endif
+
+#ifndef ETH_MAX_REQUEST_BODY
+#define ETH_MAX_REQUEST_BODY 2048
+#endif
+#else
+
+#define ETH_MAX_REQUEST_BODY 0
+#define ETH_MAX_RESPONSE_LEN 0
+
+#endif
+
+#ifndef ETH_DISABLE_HEADERS
+#ifndef ETH_MAX_HEADERS
+#define ETH_MAX_HEADERS 10
+#endif
+#else
+#define ETH_MAX_HEADERS 0
+#endif
+
+#ifndef ETH_MAX_ROUTES
+#define ETH_MAX_ROUTES 32
+#endif
+
+#ifndef ETH_MAX_ROUTE_TARGET
+#define ETH_MAX_ROUTE_TARGET 64
+#endif
+
+#ifndef ETH_PARSE_BUFFER_SIZE
+#define ETH_PARSE_BUFFER_SIZE 4096
+#endif
 
 namespace EthHTTPServer {
-    char buffer[4096];
+    char buffer[ETH_PARSE_BUFFER_SIZE];
 
     struct EthServerConfig {
         byte mac[12] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
         long unsigned int ip = 0;
+        #ifdef ARDUINO_ARCH_RP2040
         unsigned int pin_rx = 4;
         unsigned int pin_tx = 3;
         unsigned int pin_cs = 5;
         unsigned int pin_sck = 2;
+        #endif
     };
 
-    static EthernetServer server(SERVER_PORT);
+    static EthernetServer server(ETH_SERVER_PORT);
 
     struct http_header {
         char name[64];
-        char data[256];
+        char data[64];
     };
 
     struct http_request {
         bool valid = true;
         int content_length = 0;
-        int num_headers = 0;
         char method[16];
         char protocol[16];
-        char target[128];
-        http_header headers[MAX_HEADERS];
-        char body[MAX_REQUEST_BODY];
+        char target[64];
+        int num_headers = 0;
+        http_header headers[ETH_MAX_HEADERS];
+        char body[ETH_MAX_REQUEST_BODY];
     };
 
     struct http_response {
         int code = 200;
         char code_msg[32] = "Success";
         char content_type[32] = "text/plain; charset=utf-8";
-        http_header headers[MAX_HEADERS];
-        char body[MAX_RESPONSE_LEN];
+        http_header headers[ETH_MAX_HEADERS];
         int num_headers = 0;
+        char body[ETH_MAX_RESPONSE_LEN];
     };
 
     using route_func_t = http_response (*)(const http_request&);
 
     struct route_t {
         route_func_t func = nullptr;
-        char target[MAX_ROUTE_TARGET];
+        char target[ETH_MAX_ROUTE_TARGET];
     };
 
     struct route_table_t {
         int num_routes = 0;
         route_t not_found;
-        route_t routes[MAX_ROUTES];
+        route_t routes[ETH_MAX_ROUTES];
     };
 
     static route_table_t route_table;
@@ -109,7 +144,7 @@ namespace EthHTTPServer {
     }
 
     http_request parse_request(EthernetClient& client) {
-        int len = read_all(client, buffer, 4096);
+        int len = read_all(client, buffer, ETH_PARSE_BUFFER_SIZE);
 
         http_request req;
         parse_stage stage = parse_stage::method;
@@ -144,13 +179,19 @@ namespace EthHTTPServer {
                 cursor += space_i + 1;
                 stage = next;
             }
-            else if (stage == parse_stage::headers && header_i < MAX_HEADERS) {
+            else if (stage == parse_stage::headers && header_i < ETH_MAX_HEADERS) {
                 // skip headers lol (read until we can an empty line)
                 int ll = find_endline(data, remaining);
                 int name_end = find_char(data, remaining, ':');
 
                 if (name_end + 2 < ll) {
+                #ifdef ETH_DISABLE_HEADERS
+                    http_header _header;
+                    http_header* header = &_header;
+                #else
                     http_header* header = &req.headers[header_i];
+                #endif
+
                     cpy(header->name, data, name_end);
                     cpy(header->data, data + name_end + 2, ll - (name_end + 2));
 
@@ -159,8 +200,10 @@ namespace EthHTTPServer {
                         req.content_length = strtol(header->data, &end, 10);
                     }
 
+                #ifndef ETH_DISABLE_HEADERS
                     req.num_headers++;
                     header_i++;
+                #endif
                 }
 
                 cursor += ll + 1;
@@ -171,7 +214,9 @@ namespace EthHTTPServer {
             }
             else {
                 // body parsing
+            #ifndef ETH_DISABLE_BODY
                 memcpy(req.body, data, find_endline(data, remaining));
+            #endif
                 break;
             }
         }
@@ -194,9 +239,13 @@ namespace EthHTTPServer {
             "HTTP/1.1 %d %s\n"
             "Content-Type: %s\n"
             "Content-Length: %d\n"
+        #ifndef ETH_DISABLE_HEADERS
             "%s"
+        #endif
             "\n"
             "%s";
+
+    #ifndef ETH_DISABLE_HEADERS
         static char const* header_format = "%s: %s\n";
         static char header_buffer[2048];
         static char scratch[512];
@@ -207,6 +256,13 @@ namespace EthHTTPServer {
             strcpy(header_buffer + offset, scratch);
             offset += strlen(scratch);
         }
+    #endif
+
+    #ifndef ETH_DISABLE_BODY
+        const char* body = resp.body;
+    #else
+        const char* body = "";
+    #endif
 
         sprintf(
             buffer,
@@ -214,10 +270,13 @@ namespace EthHTTPServer {
             resp.code,
             resp.code_msg,
             resp.content_type,
-            strlen(resp.body),
+            strlen(body),
+        #ifndef ETH_DISABLE_HEADERS
             header_buffer,
-            resp.body
+        #endif
+            body
         );
+
         int i = 0;
         do {
             client.write(buffer[i]);
@@ -226,17 +285,18 @@ namespace EthHTTPServer {
     }
 
     http_response default_not_found(const http_request& req) {
-        return http_response{
-            404,
-            "Not found",
-        };
+        http_response resp;
+        resp.code = 404;
+        strcpy(resp.code_msg, "Not found");
+        return resp;
     }
 
     // user api
 
-    void setup(EthServerConfig config) {
+    void setup(EthServerConfig& config) {
         Serial.println("Server init");
         // SPI
+    #ifdef ARDUINO_ARCH_RP2040
         bool ok = SPI.setRX(config.pin_rx);
         ok &= SPI.setTX(config.pin_tx);
         ok &= SPI.setCS(config.pin_cs);
@@ -246,11 +306,15 @@ namespace EthHTTPServer {
             // true for hardware cs
             SPI.begin(true);
         } else {
-            Serial.println("FUCKKKKK");
+            Serial.println("Failed SPI");
         }
 
-        // Ethernet interface
         Ethernet.init(config.pin_cs);
+    #else
+        SPI.begin();
+    #endif
+
+        // Ethernet interface
         if (config.ip) {
             Ethernet.begin(config.mac, config.ip);
         } else {
@@ -266,7 +330,9 @@ namespace EthHTTPServer {
     }
 
     void add_endpoint(const char* target, route_func_t func) {
+        #ifdef ARDUINO_ARCH_RP2040
         assert(route_table.num_routes < MAX_ROUTES);
+        #endif
 
         route_t& new_route = route_table.routes[route_table.num_routes];
         strcpy(new_route.target, target);
