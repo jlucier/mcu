@@ -9,8 +9,8 @@
 #include "utils/eth_server.h"
 
 
-#define DT_PIN_PWR 7
-#define DT_PIN_RST 8
+#define DT_PIN_PWR 8
+#define DT_PIN_RST 7 
 #define DT_PIN_HOLD_DURATION 250
 
 static const byte mac[] = {0xDE, 0xAD, 0xBE, 0xEE, 0xEE, 0xEF};
