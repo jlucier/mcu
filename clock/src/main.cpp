@@ -7,7 +7,7 @@
 #define SRCLR D0
 
 using digit_t = uint8_t;
-#define NDIGITS 1
+#define NDIGITS 2
 
 #define SE 0x01
 #define SG 0x02
@@ -32,7 +32,7 @@ digit_t number_to_byte[] = {
 };
 
 struct clock_display {
-  digit_t digits[1];
+  digit_t digits[NDIGITS];
   bool colons = false;
 };
 
@@ -56,25 +56,29 @@ void write_all(clock_display& disp) {
   // output register latch low
   digitalWrite(RCLK, LOW);
 
-  // TODO: place colons properly
-  uint8_t out = disp.digits[0] | (disp.colons ? SDP : 0);
-
-  // for (int i = 0; i < NDIGITS; i++) {
-  shiftOut(DATA_PIN, SRCLK, MSBFIRST, out);
-  // }
+  for (int i = 0; i < NDIGITS; i++) {
+    // shift out the data
+    // TODO: place colons properly
+    uint8_t out = disp.digits[i] | (disp.colons ? SDP : 0);
+    shiftOut(DATA_PIN, SRCLK, MSBFIRST, out);
+  }
 
   // latch high into the output registers
   digitalWrite(RCLK, HIGH);
 }
 
-void second(clock_display& disp, uint8_t i) {
-  disp.digits[0] = number_to_byte[i];
+void second(clock_display& disp, int i) {
+  int low = i % 10;
+  int high = i / 10;
+
+  disp.digits[0] = number_to_byte[low];
+  disp.digits[1] = number_to_byte[high];
   disp.colons = true;
   write_all(disp);
-  delay(500);
+  delay(250);
   disp.colons = false;
   write_all(disp);
-  delay(500);
+  delay(250);
 }
 
 void setup() {
@@ -92,7 +96,7 @@ void setup() {
 void loop() {
   Serial.println("LOOOOOOOP");
   // disp.colons = !disp.colons;
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 100; i++) {
     second(disp, i);
   }
 }
