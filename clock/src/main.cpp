@@ -7,7 +7,7 @@
 #define SRCLR D0
 
 using digit_t = uint8_t;
-#define NDIGITS 2
+#define NDIGITS 4
 
 #define SE 0x01
 #define SG 0x02
@@ -73,6 +73,8 @@ void second(clock_display& disp, int i) {
 
   disp.digits[0] = number_to_byte[low];
   disp.digits[1] = number_to_byte[high];
+  disp.digits[2] = number_to_byte[low];
+  disp.digits[3] = number_to_byte[high];
   disp.colons = true;
   write_all(disp);
   delay(250);
