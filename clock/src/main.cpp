@@ -101,12 +101,9 @@ void flash(clock_display& disp, int i) {
   int low = i % 10;
   int high = i / 10;
 
-  disp.digits[0] = number_to_byte[low];
-  disp.digits[1] = number_to_byte[high];
-  disp.digits[2] = number_to_byte[low];
-  disp.digits[3] = number_to_byte[high];
-  disp.digits[4] = number_to_byte[low];
-  disp.digits[5] = number_to_byte[high];
+  for (int j = 0; j < NDIGITS; j++) {
+    disp.digits[j] = number_to_byte[j%2==0 ? low : high];
+  }
 
   display_with_flash(disp);
 }
