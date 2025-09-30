@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <time.h>
+#include "private.h"
 
 #define DATA_PIN D8
 #define OUTPUT_ENABLE D7
@@ -7,7 +10,7 @@
 #define SRCLR D0
 
 using digit_t = uint8_t;
-#define NDIGITS 4
+#define NDIGITS 6
 
 #define SE 0x01
 #define SG 0x02
@@ -30,6 +33,8 @@ digit_t number_to_byte[] = {
     SA | SB | SC | SD | SE | SF | SG,  // 8
     SA | SB | SC | SD | SF | SG,       // 9
 };
+
+const char* TZ_STRING = "EST5EDT,M3.2.0/2,M11.1.0/2";
 
 struct clock_display {
   digit_t digits[NDIGITS];
@@ -67,7 +72,32 @@ void write_all(clock_display& disp) {
   digitalWrite(RCLK, HIGH);
 }
 
-void second(clock_display& disp, int i) {
+void display_with_flash(clock_display& disp, uint64_t delay_ms = 1000) {
+  disp.colons = true;
+  write_all(disp);
+  delay(delay_ms / 2);
+  disp.colons = false;
+  write_all(disp);
+  delay(delay_ms - delay_ms / 2);
+}
+
+void second(clock_display& disp, tm& timeinfo) {
+  timeval tv;
+  gettimeofday(&tv, nullptr);
+  uint64_t ms_sleep = 1000 - (tv.tv_usec / 1000);
+  ms_sleep = ms_sleep > 1000 || ms_sleep < 0 ? 1000 : ms_sleep;
+
+  disp.digits[0] = number_to_byte[timeinfo.tm_sec % 10];
+  disp.digits[1] = number_to_byte[timeinfo.tm_sec / 10];
+  disp.digits[2] = number_to_byte[timeinfo.tm_min % 10];
+  disp.digits[3] = number_to_byte[timeinfo.tm_min / 10];
+  disp.digits[4] = number_to_byte[timeinfo.tm_hour % 10];
+  disp.digits[5] = number_to_byte[timeinfo.tm_hour / 10];
+
+  display_with_flash(disp, ms_sleep);
+}
+
+void flash(clock_display& disp, int i) {
   int low = i % 10;
   int high = i / 10;
 
@@ -75,12 +105,10 @@ void second(clock_display& disp, int i) {
   disp.digits[1] = number_to_byte[high];
   disp.digits[2] = number_to_byte[low];
   disp.digits[3] = number_to_byte[high];
-  disp.colons = true;
-  write_all(disp);
-  delay(250);
-  disp.colons = false;
-  write_all(disp);
-  delay(250);
+  disp.digits[4] = number_to_byte[low];
+  disp.digits[5] = number_to_byte[high];
+
+  display_with_flash(disp);
 }
 
 void setup() {
@@ -93,12 +121,37 @@ void setup() {
 
   output_enable();
   reset();
+
+  // flash to indicate startup
+  WiFi.begin(WLAN_SSID, WLAN_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    flash(disp, 0);
+  }
+
+  configTime(TZ_STRING, "pool.ntp.org", "time.nist.gov");
+  Serial.println("Waiting for time...");
+  struct tm timeinfo;
+  while (!getLocalTime(&timeinfo)) {
+    Serial.print(".");
+    flash(disp, 8);
+  }
+
+  Serial.println("Got time!");
 }
 
 void loop() {
-  Serial.println("LOOOOOOOP");
-  // disp.colons = !disp.colons;
-  for (int i = 0; i < 100; i++) {
-    second(disp, i);
+  static char buf[64];
+  static struct tm timeinfo;
+
+  if (getLocalTime(&timeinfo)) {
+
+    strftime(buf, sizeof(buf), "%A, %B %d %Y %H:%M:%S", &timeinfo);
+    Serial.println(buf);
+
+    second(disp, timeinfo);
+  } else {
+    Serial.println("Failed to get time");
+    delay(500);
   }
 }
