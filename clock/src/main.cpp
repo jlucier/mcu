@@ -45,14 +45,16 @@ clock_display disp;
 
 // functions
 
+void setBrightness(float frac) {
+  frac = constrain(frac, 0.0f, 1.0f);
+  int duty = (int)round((1.0f - frac) * 1023); // active-low OE
+  analogWrite(OUTPUT_ENABLE, duty);
+}
+
 void reset() {
   digitalWrite(SRCLR, LOW);
   delay(10);
   digitalWrite(SRCLR, HIGH);
-}
-
-void output_enable() {
-  digitalWrite(OUTPUT_ENABLE, LOW);
 }
 
 void write_all(clock_display& disp) {
@@ -116,7 +118,11 @@ void setup() {
   pinMode(SRCLK, OUTPUT);
   pinMode(SRCLR, OUTPUT);
 
-  output_enable();
+
+  analogWriteFreq(8000);      // 8 kHz is a nice start (1–20 kHz typical)
+  analogWriteRange(1023);     // default, included for clarity
+
+  setBrightness(0.5f);
   reset();
 
   // flash to indicate startup
@@ -140,8 +146,12 @@ void setup() {
 void loop() {
   static char buf[64];
   static struct tm timeinfo;
+  static float brightness = 0.0f;
 
   if (getLocalTime(&timeinfo)) {
+    setBrightness(brightness);
+    brightness += 0.05f;
+    brightness = brightness > 1.0f ? 0.0f : brightness;
 
     strftime(buf, sizeof(buf), "%A, %B %d %Y %H:%M:%S", &timeinfo);
     Serial.println(buf);
