@@ -1,113 +1,43 @@
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <time.h>
+#include "clock.hpp"
+#include "defines.hpp"
 #include "private.h"
-
-#define DATA_PIN D8
-#define OUTPUT_ENABLE D7
-#define RCLK D6
-#define SRCLK D5
-#define SRCLR D0
-
-using digit_t = uint8_t;
-#define NDIGITS 6
-
-#define SE 0x01
-#define SG 0x02
-#define SF 0x04
-#define SA 0x08
-#define SB 0x10
-#define SD 0x20
-#define SC 0x40
-#define SDP 0x80
-
-digit_t number_to_byte[] = {
-    SA | SB | SC | SD | SE | SF,       // 0
-    SB | SC,                           // 1
-    SA | SB | SD | SE | SG,            // 2
-    SA | SB | SC | SD | SG,            // 3
-    SB | SC | SF | SG,                 // 4
-    SA | SC | SD | SF | SG,            // 5
-    SA | SC | SD | SE | SF | SG,       // 6
-    SA | SB | SC,                      // 7
-    SA | SB | SC | SD | SE | SF | SG,  // 8
-    SA | SB | SC | SD | SF | SG,       // 9
-};
 
 const char* TZ_STRING = "EST5EDT,M3.2.0/2,M11.1.0/2";
 
-struct clock_display {
-  digit_t digits[NDIGITS];
-  bool colons = false;
-};
-
 clock_display disp;
+
+const float min_brightness = 0.01f;
+const float max_brightness = 0.4f;
 
 // functions
 
-void setBrightness(float frac) {
+float lerp(float val, float in_min, float in_max, float out_min, float out_max) {
+  return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+void set_brightness(float frac) {
   frac = constrain(frac, 0.0f, 1.0f);
   int duty = (int)round((1.0f - frac) * 1023); // active-low OE
   analogWrite(OUTPUT_ENABLE, duty);
 }
 
-void reset() {
-  digitalWrite(SRCLR, LOW);
-  delay(10);
-  digitalWrite(SRCLR, HIGH);
-}
+float read_light_level() {
+  static float avg = 0.0f;
+  static float alpha = 0.1f;
+  static bool first = true;
 
-void write_all(clock_display& disp) {
-  reset();
+  int raw = analogRead(A0);
 
-  // output register latch low
-  digitalWrite(RCLK, LOW);
-
-  for (int i = 0; i < NDIGITS; i++) {
-    // shift out the data
-    // TODO: place colons properly
-    uint8_t out = disp.digits[i] | (disp.colons ? SDP : 0);
-    shiftOut(DATA_PIN, SRCLK, MSBFIRST, out);
+  float level = constrain(raw / 1024.0f, 0.0f, 1.0f);
+  if (first) {
+    avg = level;
+    first = false;
+  } else {
+    avg = avg * (1 - alpha) + level * alpha;
   }
 
-  // latch high into the output registers
-  digitalWrite(RCLK, HIGH);
-}
-
-void display_with_flash(clock_display& disp, uint64_t delay_ms = 1000) {
-  disp.colons = true;
-  write_all(disp);
-  delay(delay_ms / 2);
-  disp.colons = false;
-  write_all(disp);
-  delay(delay_ms - delay_ms / 2);
-}
-
-void second(clock_display& disp, tm& timeinfo) {
-  timeval tv;
-  gettimeofday(&tv, nullptr);
-  uint64_t ms_sleep = 1000 - (tv.tv_usec / 1000);
-  ms_sleep = ms_sleep > 1000 || ms_sleep < 0 ? 1000 : ms_sleep;
-
-  disp.digits[0] = number_to_byte[timeinfo.tm_sec % 10];
-  disp.digits[1] = number_to_byte[timeinfo.tm_sec / 10];
-  disp.digits[2] = number_to_byte[timeinfo.tm_min % 10];
-  disp.digits[3] = number_to_byte[timeinfo.tm_min / 10];
-  disp.digits[4] = number_to_byte[timeinfo.tm_hour % 10];
-  disp.digits[5] = number_to_byte[timeinfo.tm_hour / 10];
-
-  display_with_flash(disp, ms_sleep);
-}
-
-void flash(clock_display& disp, int i) {
-  int low = i % 10;
-  int high = i / 10;
-
-  for (int j = 0; j < NDIGITS; j++) {
-    disp.digits[j] = number_to_byte[j%2==0 ? low : high];
-  }
-
-  display_with_flash(disp);
+  return avg;
 }
 
 void setup() {
@@ -118,18 +48,17 @@ void setup() {
   pinMode(SRCLK, OUTPUT);
   pinMode(SRCLR, OUTPUT);
 
-
   analogWriteFreq(8000);      // 8 kHz is a nice start (1–20 kHz typical)
   analogWriteRange(1023);     // default, included for clarity
 
-  setBrightness(0.5f);
-  reset();
+  set_brightness(0.5f);
+  disp.reset();
 
   // flash to indicate startup
   WiFi.begin(WLAN_SSID, WLAN_PASS);
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
-    flash(disp, 0);
+    disp.flash(0);
   }
 
   configTime(TZ_STRING, "pool.ntp.org", "time.nist.gov");
@@ -137,28 +66,19 @@ void setup() {
   struct tm timeinfo;
   while (!getLocalTime(&timeinfo)) {
     Serial.print(".");
-    flash(disp, 8);
+    disp.flash(8);
   }
 
   Serial.println("Got time!");
 }
 
 void loop() {
-  static char buf[64];
-  static struct tm timeinfo;
-  static float brightness = 0.0f;
+  disp.do_second();
 
-  if (getLocalTime(&timeinfo)) {
-    setBrightness(brightness);
-    brightness += 0.05f;
-    brightness = brightness > 1.0f ? 0.0f : brightness;
+  float light_level = read_light_level();
+  set_brightness(lerp(light_level, 0.0f, 1.0f, min_brightness, max_brightness));
 
-    strftime(buf, sizeof(buf), "%A, %B %d %Y %H:%M:%S", &timeinfo);
-    Serial.println(buf);
-
-    second(disp, timeinfo);
-  } else {
-    Serial.println("Failed to get time");
-    delay(500);
-  }
+  // delay the amount we need to for brightness updates, seconds will update on
+  // their own internal schedule
+  delay(50);
 }
