@@ -7,7 +7,7 @@ const char* TZ_STRING = "EST5EDT,M3.2.0/2,M11.1.0/2";
 
 clock_display disp;
 
-const float min_brightness = 0.01f;
+const float min_brightness = 0.0001f;
 const float max_brightness = 0.4f;
 
 // functions
